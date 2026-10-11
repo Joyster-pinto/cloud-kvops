@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LLM-KVOps</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='%238ab4f8' d='M12 2c.5 5.5 4.5 9.5 10 10-5.5.5-9.5 4.5-10 10-.5-5.5-4.5-9.5-10-10 5.5-.5 9.5-4.5 10-10z'/></svg>" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <!-- SVG icon sprite -->
+  <svg width="0" height="0" style="position:absolute">
+    <symbol id="i-menu" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path fill="currentColor" d="M3.4 20.4 21 12 3.4 3.6 3.4 10l12.6 2-12.6 2z"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></g></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m5 12 5 5 9-10"/></symbol>
+    <symbol id="i-redo" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></symbol>
+    <symbol id="i-swap" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M7 7h12l-3-3M17 17H5l3 3"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M4 20V4M4 20h16M8 16l4-5 3 3 5-6"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></g></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 2c.5 5.5 4.5 9.5 10 10-5.5.5-9.5 4.5-10 10-.5-5.5-4.5-9.5-10-10 5.5-.5 9.5-4.5 10-10z"/></symbol>
+    <symbol id="i-attach" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
+  </svg>
+
+  <div class="app">
+    <!-- ================= Sidebar ================= -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-top">
+        <button class="icon-btn" id="toggleSidebar" title="Collapse menu"><svg><use href="#i-menu"/></svg></button>
+      </div>
+
+      <button class="new-chat" id="newChatBtn" title="New chat">
+        <svg><use href="#i-plus"/></svg><span class="hide-collapsed">New chat</span>
+      </button>
+
+      <div class="section-label hide-collapsed">Recent</div>
+      <div class="history hide-collapsed" id="history"></div>
+
+      <details class="settings" id="settings">
+        <summary title="Settings"><svg><use href="#i-settings"/></svg><span class="hide-collapsed">Settings</span></summary>
+        <div class="settings-body">
+          <div class="field">
+            <label><span>Model</span></label>
+            <select id="modelSelect">
+              <option value="Qwen/Qwen2.5-Coder-0.5B-Instruct" selected>Qwen2.5-Coder (0.5B Instruct) [Code &amp; Math Verified]</option>
+              <option value="HuggingFaceTB/SmolLM2-135M-Instruct">SmolLM2 (135M Instruct) [Fast Lightweight]</option>
+            </select>
+          </div>
+          <div class="field">
+            <label><span>KV budget</span><span id="budgetVal">192</span></label>
+            <input type="range" id="budget" min="64" max="512" step="16" value="192" />
+            <div class="hint">Max tokens kept in KVOps memory.</div>
+          </div>
+          <div class="field">
+            <label><span>Temperature</span><span id="tempVal">0.70</span></label>
+            <input type="range" id="temp" min="0" max="1.5" step="0.05" value="0.7" />
+            <div class="hint">Lower = focused, higher = creative.</div>
+          </div>
+        </div>
+      </details>
+
+      <div class="device" id="device"><span class="dot"></span><span class="hide-collapsed" id="deviceName">Detecting device…</span></div>
+    </aside>
+
+    <!-- ================= Main ================= -->
+    <main class="main">
+      <header class="topbar">
+        <div class="brand">LLM-KVOps</div>
+        <div class="topbar-actions">
+          <button class="icon-btn" id="toggleStats" title="Memory graphs"><svg><use href="#i-chart"/></svg></button>
+        </div>
+      </header>
+
+      <div class="panes">
+        <!-- KVOps pane -->
+        <section class="pane" data-mode="kvops" id="pane-kvops">
+          <div class="pane-head">
+            <div class="pane-title"><span class="dot"></span>LLM-KVOps (With Eviction)</div>
+            <div class="pane-live"><span>KV <b data-live="kv">0.00 MB</b></span><span>Ctx <b data-live="ctx">0</b></span></div>
+          </div>
+          <div class="messages" data-role="messages"></div>
+          <div class="composer-wrap">
+            <div class="attachments" data-role="attachments"></div>
+            <div class="composer">
+              <input type="file" data-role="fileInput" style="display:none" accept=".pdf,.docx,.doc,.txt,.c,.cpp,.h,.hpp,.py,.java,.js,.ts,.html,.css,.json,.md,.csv,.sql" multiple />
+              <button class="icon-btn attach-btn" data-role="attach" title="Attach file"><svg><use href="#i-attach"/></svg></button>
+              <textarea rows="1" placeholder="Ask LLM-KVOps" data-role="input"></textarea>
+              <button class="send" data-role="send" title="Send"><svg><use href="#i-send"/></svg></button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Baseline pane -->
+        <section class="pane" data-mode="baseline" id="pane-baseline">
+          <div class="pane-head">
+            <div class="pane-title"><span class="dot"></span>Standard LLM (Without Eviction)</div>
+            <div class="pane-live"><span>KV <b data-live="kv">0.00 MB</b></span><span>Ctx <b data-live="ctx">0</b></span></div>
+          </div>
+          <div class="messages" data-role="messages"></div>
+          <div class="composer-wrap">
+            <div class="attachments" data-role="attachments"></div>
+            <div class="composer">
+              <input type="file" data-role="fileInput" style="display:none" accept=".pdf,.docx,.doc,.txt,.c,.cpp,.h,.hpp,.py,.java,.js,.ts,.html,.css,.json,.md,.csv,.sql" multiple />
+              <button class="icon-btn attach-btn" data-role="attach" title="Attach file"><svg><use href="#i-attach"/></svg></button>
+              <textarea rows="1" placeholder="Ask Standard LLM" data-role="input"></textarea>
+              <button class="send" data-role="send" title="Send"><svg><use href="#i-send"/></svg></button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- ================= Stats drawer ================= -->
+    <aside class="stats" id="stats">
+      <div class="stats-inner">
+        <div class="stats-head">
+          <h3>Memory</h3>
+          <button class="icon-btn" id="closeStats" title="Close"><svg><use href="#i-close"/></svg></button>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><h4>KV cache size</h4><span>MB per token</span></div>
+          <div class="chart" id="chartKv"></div>
+          <div class="legend"><span><i style="background:var(--kvops)"></i>LLM-KVOps</span><span><i style="background:var(--base)"></i>Standard</span></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><h4>GPU memory allocated</h4><span>MB per token</span></div>
+          <div class="chart" id="chartGpu"></div>
+          <div class="legend"><span><i style="background:var(--kvops)"></i>LLM-KVOps</span><span><i style="background:var(--base)"></i>Standard</span></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><h4>Latency</h4><span>ms per token</span></div>
+          <div class="chart" id="chartLat"></div>
+          <div class="legend"><span><i style="background:var(--kvops)"></i>LLM-KVOps</span><span><i style="background:var(--base)"></i>Standard</span></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><h4>Last run comparison</h4></div>
+          <table class="compare">
+            <thead><tr><th></th><th>KVOps</th><th>Standard</th></tr></thead>
+            <tbody id="compareBody"></tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><h4>GPU VRAM</h4><span id="gpuName">—</span></div>
+          <div class="vram-bar"><div id="vramFill"></div></div>
+          <div class="vram-row"><span id="vramUsed">0 MB used</span><span id="vramTotal">0 MB</span></div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+# Core Simulation & Data Science
+numpy>=1.26.0
+pandas>=2.2.0
+plotly>=5.20.0
+matplotlib>=3.8.0
+seaborn>=0.13.0
+psutil>=5.9.0
+
+# Web Dashboard (Streamlit)
+streamlit>=1.35.0
+
+# Cloud API Server (FastAPI)
+fastapi>=0.111.0
+uvicorn>=0.30.0
+pydantic>=2.7.0
+
+# Deep Learning (CPU/CUDA compatible)
+torch>=2.2.0
+transformers>=4.40.0
+accelerate>=0.30.0
+
+# AWS Cloud Integration (CloudWatch & S3)
+boto3>=1.34.0

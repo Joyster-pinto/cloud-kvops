@@ -1,0 +1,1158 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-[#131314]">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LLM-KVOps • Dual Execution Profiler</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: #131314;
+      color: #e3e3e3;
+      user-select: text;
+      -webkit-user-select: text;
+    }
+    .msg-content, .msg-text, .user-msg {
+      user-select: text !important;
+      -webkit-user-select: text !important;
+      cursor: text;
+    }
+    .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #282a2c;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #3c4043;
+    }
+    .gemini-pill:focus-within {
+      background-color: #1e1f20;
+      border-color: #444746;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    }
+    .typing-cursor::after {
+      content: '▋';
+      display: inline-block;
+      vertical-align: middle;
+      color: #8ab4f8;
+      animation: blink 0.8s infinite;
+      margin-left: 2px;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+  </style>
+</head>
+<body class="h-full flex overflow-hidden">
+
+  <!-- ========================================================================= -->
+  <!-- 1. LEFT SIDEBAR: Chat History & Past Sessions                             -->
+  <!-- ========================================================================= -->
+  <aside id="leftSidebar" class="w-72 bg-[#1e1f20] border-r border-[#282a2c] flex flex-col h-full transition-all duration-300 ease-in-out shrink-0 z-30">
+    <!-- Sidebar Header -->
+    <div class="p-4 flex items-center justify-between border-b border-[#282a2c]/60">
+      <div class="flex items-center gap-2.5">
+        <svg class="w-6 h-6 text-[#8ab4f8]" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z"/>
+        </svg>
+        <span class="font-semibold text-sm tracking-wide text-[#e3e3e3]">LLM-KVOps</span>
+      </div>
+      <button onclick="toggleLeftSidebar()" class="p-1.5 rounded-lg hover:bg-[#282a2c] text-[#9aa0a6] hover:text-white transition" title="Close sidebar">
+        <i data-lucide="panel-left-close" class="w-4 h-4"></i>
+      </button>
+    </div>
+
+    <!-- New Chat Button -->
+    <div class="p-3">
+      <button onclick="createNewSession()" class="w-full py-2.5 px-4 rounded-full bg-[#131314] hover:bg-[#282a2c] border border-[#333538] text-xs font-medium text-gray-200 flex items-center gap-2.5 transition active:scale-[0.99] shadow-sm">
+        <i data-lucide="plus" class="w-4 h-4 text-[#8ab4f8]"></i>
+        <span>New session</span>
+      </button>
+    </div>
+
+    <!-- Session History List -->
+    <div class="flex-1 overflow-y-auto px-3 py-2 space-y-1">
+      <div class="text-[11px] font-medium text-[#9aa0a6] uppercase tracking-wider px-2 py-1">Recent Sessions</div>
+      <div id="sessionHistoryList" class="space-y-1">
+        <!-- Dynamically rendered past sessions -->
+      </div>
+    </div>
+
+    <!-- Bottom Settings & Model Status -->
+    <div class="p-3 border-t border-[#282a2c] bg-[#1a1a1c]/80 space-y-2">
+      <!-- Active Model Info -->
+      <div class="text-[11px] text-[#9aa0a6] px-1 flex items-center justify-between">
+        <span class="truncate" id="sidebarModelName">SmolLM2-135M</span>
+        <span class="text-emerald-400 font-mono text-[10px] flex items-center gap-1">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>CUDA
+        </span>
+      </div>
+
+      <!-- Quick Tuning Drawer Toggle -->
+      <button onclick="toggleTuningDrawer()" class="w-full py-1.5 px-3 rounded-lg hover:bg-[#282a2c] text-xs text-[#c4c7c5] flex items-center justify-between transition">
+        <div class="flex items-center gap-2">
+          <i data-lucide="sliders" class="w-3.5 h-3.5 text-[#9aa0a6]"></i>
+          <span>Execution Settings</span>
+        </div>
+        <i id="tuningArrow" data-lucide="chevron-down" class="w-3.5 h-3.5 text-[#9aa0a6] transition-transform"></i>
+      </button>
+
+      <!-- Tuning Controls Drawer (Hidden by default to keep interface clean) -->
+      <div id="tuningDrawer" class="hidden pt-2 space-y-3 px-1 border-t border-[#282a2c]/50 text-xs">
+        <div>
+          <div class="flex justify-between text-[11px] text-[#9aa0a6] mb-1">
+            <span>Model Selector:</span>
+          </div>
+          <select id="modelSelector" onchange="switchModel(this.value)" class="w-full bg-[#131314] border border-[#333538] text-gray-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-[#8ab4f8]">
+            <option value="HuggingFaceTB/SmolLM2-135M-Instruct" selected>SmolLM2 (135M Instruct)</option>
+            <option value="gpt2">OpenAI GPT-2 (124M Base)</option>
+            <option value="distilbert/distilgpt2">DistilGPT-2 (82M Base)</option>
+          </select>
+        </div>
+
+        <div>
+          <div class="flex justify-between text-[11px] text-[#9aa0a6] mb-1">
+            <span>Max Tokens:</span>
+            <span class="text-emerald-400 font-mono font-medium">1024 (Maximized)</span>
+          </div>
+        </div>
+
+        <div>
+          <div class="flex justify-between text-[11px] text-[#9aa0a6] mb-1">
+            <span>KVOps Budget:</span>
+            <span id="budgetVal" class="text-cyan-400 font-mono font-medium">192 slots</span>
+          </div>
+          <input id="budgetSlider" type="range" min="64" max="512" step="32" value="192" oninput="document.getElementById('budgetVal').innerText = this.value + ' slots'" class="w-full h-1 bg-[#131314] rounded-lg appearance-none cursor-pointer accent-cyan-500" />
+        </div>
+
+        <div>
+          <div class="flex justify-between text-[11px] text-[#9aa0a6] mb-1">
+            <span>Temperature:</span>
+            <span id="tempVal" class="text-purple-400 font-mono font-medium">0.70</span>
+          </div>
+          <input id="tempSlider" type="range" min="0.1" max="1.0" step="0.05" value="0.7" oninput="document.getElementById('tempVal').innerText = parseFloat(this.value).toFixed(2)" class="w-full h-1 bg-[#131314] rounded-lg appearance-none cursor-pointer accent-purple-500" />
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ========================================================================= -->
+  <!-- 2. MIDDLE MAIN AREA: Gemini-Style Dual Chat Experience                   -->
+  <!-- ========================================================================= -->
+  <main class="flex-1 flex flex-col h-full overflow-hidden bg-[#131314] relative">
+    
+    <!-- Top Minimalist Header -->
+    <header class="h-12 border-b border-[#282a2c] px-4 flex items-center justify-between bg-[#131314]/95 backdrop-blur z-20 shrink-0">
+      <div class="flex items-center gap-2">
+        <button id="leftToggleBtn" onclick="toggleLeftSidebar()" class="p-1.5 rounded-lg hover:bg-[#1e1f20] text-[#9aa0a6] hover:text-white transition" title="Toggle chat history">
+          <i data-lucide="panel-left" class="w-5 h-5"></i>
+        </button>
+        <span class="font-medium text-xs text-gray-300">Dual Model Comparative View</span>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <span class="text-[11px] text-[#9aa0a6] font-mono hidden sm:inline" id="modelActiveBadge">SmolLM2-135M • 100% Offline GPU</span>
+        <button onclick="toggleRightSidebar()" class="p-1.5 rounded-lg hover:bg-[#1e1f20] text-[#9aa0a6] hover:text-white transition flex items-center gap-1 text-xs" title="Toggle Real-Time Memory Graphs">
+          <i data-lucide="activity" class="w-4 h-4 text-emerald-400"></i>
+          <span class="hidden md:inline">Telemetry</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Center Dual Chat View -->
+    <div class="flex-1 grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-[#282a2c] overflow-hidden">
+      
+      <!-- ------------------------------------------------------------------- -->
+      <!-- PANE A (LEFT): LLM-KVOps (With Eviction)                            -->
+      <!-- ------------------------------------------------------------------- -->
+      <section class="flex flex-col h-full overflow-hidden bg-[#131314]">
+        <!-- Pane Header -->
+        <div class="px-4 py-2 border-b border-[#282a2c] bg-[#171819] flex items-center justify-between shrink-0">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span class="font-medium text-xs text-gray-200">LLM-KVOps (With Eviction)</span>
+          </div>
+          <div class="flex items-center gap-2 font-mono text-[11px]">
+            <span class="text-[#9aa0a6]">KV:</span>
+            <span id="kvopsKvBadge" class="text-emerald-400 font-semibold">0.00 MB</span>
+            <span id="kvopsSavedBadge" class="text-xs px-1.5 py-0.2 rounded bg-emerald-950/80 border border-emerald-800/80 text-emerald-300">0% Saved</span>
+          </div>
+        </div>
+
+        <!-- Chat Messages Container -->
+        <div id="kvopsChatContainer" class="flex-1 overflow-y-auto p-4 space-y-4">
+          <!-- Empty State Hero -->
+          <div id="kvopsEmptyState" class="h-full flex flex-col items-center justify-center text-center p-6 text-[#9aa0a6]">
+            <div class="w-10 h-10 rounded-full bg-[#1e1f20] border border-[#282a2c] flex items-center justify-center mb-3 text-emerald-400">
+              <i data-lucide="cpu" class="w-5 h-5"></i>
+            </div>
+            <h3 class="text-sm font-medium text-gray-200 mb-1">Bounded KV-Cache Memory</h3>
+            <p class="text-xs max-w-xs leading-relaxed text-[#9aa0a6]">
+              Runs 0-1 Knapsack DP + Attention Sinks eviction to keep KV VRAM constant \(O(B)\).
+            </p>
+          </div>
+        </div>
+
+        <!-- In-Pane Memory & Resource Telemetry Card for LLM-KVOps -->
+        <div class="mx-3 mb-2 p-2.5 rounded-xl bg-[#18191a] border border-emerald-900/60 text-xs font-mono shrink-0 shadow-lg">
+          <div class="flex items-center justify-between pb-1.5 mb-1.5 border-b border-[#282a2c]/80 font-sans">
+            <span class="text-[11px] font-semibold text-emerald-400 flex items-center gap-1.5">
+              <i data-lucide="cpu" class="w-3.5 h-3.5"></i> LLM-KVOps Resource Usage
+            </span>
+            <span id="kvopsStatusBadge" class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 border border-emerald-800/80 text-emerald-300 font-mono">Idle</span>
+          </div>
+          <div class="grid grid-cols-4 gap-2 text-center">
+            <div class="bg-[#131314] p-1.5 rounded-lg border border-[#282a2c]">
+              <span class="text-[9px] text-[#9aa0a6] block font-sans uppercase">KV Cache</span>
+              <span id="kvopsBoxKv" class="text-emerald-400 font-bold text-xs">0.00 MB</span>
+            </div>
+            <div class="bg-[#131314] p-1.5 rounded-lg border border-[#282a2c]">
+              <span class="text-[9px] text-[#9aa0a6] block font-sans uppercase">VRAM Saved</span>
+              <span id="kvopsBoxSaved" class="text-emerald-300 font-bold text-xs">0.0%</span>
+            </div>
+            <div class="bg-[#131314] p-1.5 rounded-lg border border-[#282a2c]">
+              <span class="text-[9px] text-[#9aa0a6] block font-sans uppercase">Evicted</span>
+              <span id="kvopsBoxEvicted" class="text-cyan-400 font-bold text-xs">0 tok</span>
+            </div>
+            <div class="bg-[#131314] p-1.5 rounded-lg border border-[#282a2c]">
+              <span class="text-[9px] text-[#9aa0a6] block font-sans uppercase">GPU VRAM</span>
+              <span id="kvopsBoxGpu" class="text-yellow-400 font-bold text-xs">0 MB</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dedicated Prompt Input for LLM-KVOps -->
+        <div class="p-3 pt-0 border-t border-[#282a2c] bg-[#161718] shrink-0">
+          <div class="flex items-center gap-2 bg-[#1e1f20] border border-[#333538] focus-within:border-emerald-500 rounded-2xl px-3 py-1.5 transition">
+            <textarea
+              id="kvopsInput"
+              rows="1"
+              placeholder="Prompt for LLM-KVOps (With Eviction)..."
+              class="flex-1 bg-transparent border-0 text-xs text-gray-200 placeholder-[#9aa0a6] focus:outline-none resize-none py-1 max-h-24"
+              onkeydown="handleKvopsKeydown(event)"
+              oninput="autoGrow(this)"
+            ></textarea>
+            <button id="kvopsSendBtn" onclick="submitKvopsPrompt()" class="p-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white transition disabled:opacity-40 flex items-center justify-center shrink-0 cursor-pointer" title="Run LLM-KVOps">
+              <i data-lucide="play" class="w-3.5 h-3.5 fill-current"></i>
+            </button>
+          </div>
+          <div class="flex items-center justify-between mt-1 px-1 text-[10px] text-[#9aa0a6]">
+            <span>Bounds KV cache via 0-1 Knapsack DP</span>
+            <button onclick="copyPromptToBase()" class="hover:text-red-400 transition flex items-center gap-1 text-gray-400 cursor-pointer">
+              <i data-lucide="copy" class="w-3 h-3"></i> Copy prompt to Standard
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ------------------------------------------------------------------- -->
+      <!-- PANE B (RIGHT): Standard LLM (Without Eviction)                     -->
+      <!-- ------------------------------------------------------------------- -->
+      <section class="flex flex-col h-full overflow-hidden bg-[#131314]">
+        <!-- Pane Header -->
+        <div class="px-4 py-2 border-b border-[#282a2c] bg-[#171819] flex items-center justify-between shrink-0">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-red-400"></span>
+            <span class="font-medium text-xs text-gray-200">Standard LLM (Without Eviction)</span>
+          </div>
+          <div class="flex items-center gap-2 font-mono text-[11px]">
+            <span class="text-[#9aa0a6]">KV:</span>
+            <span id="baseKvBadge" class="text-red-400 font-semibold">0.00 MB</span>
+            <span id="baseTokensBadge" class="text-[#9aa0a6]">0 tok</span>
+          </div>
+        </div>
+
+        <!-- Chat Messages Container -->
+        <div id="baseChatContainer" class="flex-1 overflow-y-auto p-4 space-y-4">
+          <!-- Empty State Hero -->
+          <div id="baseEmptyState" class="h-full flex flex-col items-center justify-center text-center p-6 text-[#9aa0a6]">
+            <div class="w-10 h-10 rounded-full bg-[#1e1f20] border border-[#282a2c] flex items-center justify-center mb-3 text-red-400">
+              <i data-lucide="bot" class="w-5 h-5"></i>
+            </div>
+            <h3 class="text-sm font-medium text-gray-200 mb-1">Standard Unconstrained Cache</h3>
+            <p class="text-xs max-w-xs leading-relaxed text-[#9aa0a6]">
+              Standard autoregressive generation where the KV cache grows unbounded \(O(N)\).
+            </p>
+          </div>
+        </div>
+
+        <!-- In-Pane Memory & Resource Telemetry Card for Standard LLM -->
+        <div class="mx-3 mb-2 p-2.5 rounded-xl bg-[#18191a] border border-red-900/60 text-xs font-mono shrink-0 shadow-lg">
+          <div class="flex items-center justify-between pb-1.5 mb-1.5 border-b border-[#282a2c]/80 font-sans">
+            <span class="text-[11px] font-semibold text-red-400 flex items-center gap-1.5">
+              <i data-lucide="bot" class="w-3.5 h-3.5"></i> Standard LLM Resource Usage
+            </span>
+            <span id="baseStatusBadge" class="text-[10px] px-2 py-0.5 rounded-full bg-red-950 border border-red-800/80 text-red-300 font-mono">Idle</span>
+          </div>
+          <div class="grid grid-cols-4 gap-2 text-center">
+            <div class="bg-[#131314] p-1.5 rounded-lg border border-[#282a2c]">
+              <span class="text-[9px] text-[#9aa0a6] block font-sans uppercase">KV Cache</span>
+              <span id="baseBoxKv" class="text-red-400 font-bold text-xs">0.00 MB</span>
+            </div>
+            <div class="bg-[#131314] p-1.5 rounded-lg border border-[#282a2c]">
+              <span class="text-[9px] text-[#9aa0a6] block font-sans uppercase">Context</span>
+              <span id="baseBoxTokens" class="text-gray-200 font-bold text-xs">0 tok</span>
+            </div>
+            <div class="bg-[#131314] p-1.5 rounded-lg border border-[#282a2c]">
+              <span class="text-[9px] text-[#9aa0a6] block font-sans uppercase">Latency</span>
+              <span id="baseBoxLatency" class="text-purple-400 font-bold text-xs">0.0 ms</span>
+            </div>
+            <div class="bg-[#131314] p-1.5 rounded-lg border border-[#282a2c]">
+              <span class="text-[9px] text-[#9aa0a6] block font-sans uppercase">GPU VRAM</span>
+              <span id="baseBoxGpu" class="text-yellow-400 font-bold text-xs">0 MB</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dedicated Prompt Input for Standard LLM -->
+        <div class="p-3 pt-0 border-t border-[#282a2c] bg-[#161718] shrink-0">
+          <div class="flex items-center gap-2 bg-[#1e1f20] border border-[#333538] focus-within:border-red-500 rounded-2xl px-3 py-1.5 transition">
+            <textarea
+              id="baseInput"
+              rows="1"
+              placeholder="Prompt for Standard LLM (Without Eviction)..."
+              class="flex-1 bg-transparent border-0 text-xs text-gray-200 placeholder-[#9aa0a6] focus:outline-none resize-none py-1 max-h-24"
+              onkeydown="handleBaseKeydown(event)"
+              oninput="autoGrow(this)"
+            ></textarea>
+            <button id="baseSendBtn" onclick="submitBasePrompt()" class="p-2 rounded-xl bg-red-600 hover:bg-red-500 text-white transition disabled:opacity-40 flex items-center justify-center shrink-0 cursor-pointer" title="Run Standard LLM">
+              <i data-lucide="play" class="w-3.5 h-3.5 fill-current"></i>
+            </button>
+          </div>
+          <div class="flex items-center justify-between mt-1 px-1 text-[10px] text-[#9aa0a6]">
+            <span>Grows linearly O(N) without memory bounds</span>
+            <button onclick="copyPromptToKvops()" class="hover:text-emerald-400 transition flex items-center gap-1 text-gray-400 cursor-pointer">
+              <i data-lucide="copy" class="w-3 h-3"></i> Copy prompt to KVOps
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Quick Suggested Prompt Chips -->
+    <div id="promptChipsContainer" class="px-4 py-2 border-t border-[#282a2c] flex items-center justify-center gap-2 overflow-x-auto text-xs shrink-0 bg-[#171819]">
+      <span class="text-[11px] text-[#9aa0a6] shrink-0 font-medium">Quick Prompts:</span>
+      <button onclick="selectPrompt('Tell me a fun and engaging short story about an offline robot on a mission.')" class="px-3 py-1 rounded-full bg-[#1e1f20] hover:bg-[#282a2c] border border-[#282a2c] text-[#c4c7c5] transition shrink-0 flex items-center gap-1.5 text-xs cursor-pointer">
+        <i data-lucide="book-open" class="w-3 h-3 text-emerald-400"></i>
+        <span>Offline robot story</span>
+      </button>
+      <button onclick="selectPrompt('Explain how dynamic programming solves the 0-1 knapsack problem in simple terms.')" class="px-3 py-1 rounded-full bg-[#1e1f20] hover:bg-[#282a2c] border border-[#282a2c] text-[#c4c7c5] transition shrink-0 flex items-center gap-1.5 text-xs cursor-pointer">
+        <i data-lucide="git-branch" class="w-3 h-3 text-blue-400"></i>
+        <span>0-1 Knapsack DP</span>
+      </button>
+      <button onclick="selectPrompt('Why does uncompressed KV-cache create a memory bottleneck in LLMs?')" class="px-3 py-1 rounded-full bg-[#1e1f20] hover:bg-[#282a2c] border border-[#282a2c] text-[#c4c7c5] transition shrink-0 flex items-center gap-1.5 text-xs cursor-pointer">
+        <i data-lucide="database" class="w-3 h-3 text-purple-400"></i>
+        <span>KV Bottleneck</span>
+      </button>
+    </div>
+  </main>
+
+  <!-- ========================================================================= -->
+  <!-- 3. RIGHT SIDEBAR: Live Real-Time Memory Usage Graphs                      -->
+  <!-- ========================================================================= -->
+  <aside id="rightSidebar" class="w-80 bg-[#1e1f20] border-l border-[#282a2c] flex flex-col h-full transition-all duration-300 ease-in-out shrink-0 z-30">
+    <!-- Header -->
+    <div class="p-3.5 flex items-center justify-between border-b border-[#282a2c]">
+      <div class="flex items-center gap-2">
+        <i data-lucide="line-chart" class="w-4 h-4 text-emerald-400"></i>
+        <span class="font-semibold text-xs text-gray-200">Real-Time Telemetry</span>
+      </div>
+      <button onclick="toggleRightSidebar()" class="p-1 rounded-lg hover:bg-[#282a2c] text-[#9aa0a6] hover:text-white transition" title="Close telemetry">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+
+    <!-- Live Telemetry Content -->
+    <div class="flex-1 overflow-y-auto p-4 space-y-4">
+      
+      <!-- Metrics Summary Cards -->
+      <div class="grid grid-cols-2 gap-2">
+        <div class="bg-[#131314] p-2.5 rounded-xl border border-[#282a2c]">
+          <span class="text-[10px] text-[#9aa0a6] block uppercase tracking-wider">VRAM Saved</span>
+          <span id="rightSavedPct" class="text-base font-bold text-emerald-400 font-mono">0.0%</span>
+        </div>
+        <div class="bg-[#131314] p-2.5 rounded-xl border border-[#282a2c]">
+          <span class="text-[10px] text-[#9aa0a6] block uppercase tracking-wider">Evicted Tokens</span>
+          <span id="rightEvictedCount" class="text-base font-bold text-cyan-400 font-mono">0</span>
+        </div>
+        <div class="bg-[#131314] p-2.5 rounded-xl border border-[#282a2c]">
+          <span class="text-[10px] text-[#9aa0a6] block uppercase tracking-wider">Step Latency</span>
+          <span id="rightLatency" class="text-base font-bold text-purple-400 font-mono">0.0 ms</span>
+        </div>
+        <div class="bg-[#131314] p-2.5 rounded-xl border border-[#282a2c]">
+          <span class="text-[10px] text-[#9aa0a6] block uppercase tracking-wider">CUDA Memory</span>
+          <span id="rightGpuMem" class="text-base font-bold text-yellow-400 font-mono">0 MB</span>
+        </div>
+      </div>
+
+      <!-- Graph 1: KV-Cache Footprint Comparison -->
+      <div class="bg-[#131314] p-3 rounded-xl border border-[#282a2c] space-y-2">
+        <div class="flex items-center justify-between text-xs">
+          <span class="font-medium text-gray-300">KV-Cache Footprint (MB)</span>
+          <span class="text-[10px] text-[#9aa0a6] font-mono">Per Step</span>
+        </div>
+        <div class="h-44 w-full relative">
+          <canvas id="liveKvChart"></canvas>
+        </div>
+        <div class="flex items-center justify-between text-[10px] text-[#9aa0a6] pt-1">
+          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[#ea4335]"></span>Standard O(N)</span>
+          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[#34a853]"></span>KVOps O(B)</span>
+        </div>
+      </div>
+
+      <!-- Graph 2: Total PyTorch GPU VRAM Allocation -->
+      <div class="bg-[#131314] p-3 rounded-xl border border-[#282a2c] space-y-2">
+        <div class="flex items-center justify-between text-xs">
+          <span class="font-medium text-gray-300">PyTorch GPU VRAM (MB)</span>
+          <span class="text-[10px] text-emerald-400 font-mono">Active CUDA</span>
+        </div>
+        <div class="h-36 w-full relative">
+          <canvas id="liveGpuChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Real-Time Hardware Monitoring Guide -->
+      <div class="bg-[#18191a] p-3 rounded-xl border border-[#282a2c]/70 text-xs space-y-1.5">
+        <div class="flex items-center gap-1.5 font-medium text-gray-200">
+          <i data-lucide="info" class="w-3.5 h-3.5 text-[#8ab4f8]"></i>
+          <span>Live GPU VRAM Apps</span>
+        </div>
+        <p class="text-[11px] text-[#9aa0a6] leading-relaxed">
+          To verify memory consumption directly in your OS:
+        </p>
+        <ul class="text-[11px] text-[#c4c7c5] space-y-1 list-disc list-inside">
+          <li><strong>Task Manager</strong>: Press <code class="bg-[#131314] px-1 rounded text-gray-300">Ctrl+Shift+Esc</code> &rarr; Performance &rarr; GPU &rarr; Dedicated Memory.</li>
+          <li><strong>Terminal</strong>: Run <code class="bg-[#131314] px-1 rounded text-emerald-300">nvidia-smi dmon -s m</code> for live 1-second polling.</li>
+          <li><strong>Tools</strong>: TechPowerUp GPU-Z (Sensors tab) or MSI Afterburner.</li>
+        </ul>
+      </div>
+
+    </div>
+  </aside>
+
+  <!-- ========================================================================= -->
+  <!-- JAVASCRIPT LOGIC: Dual SSE, Persistence, Charts, & UI                     -->
+  <!-- ========================================================================= -->
+  <script>
+    // State Variables
+    let currentSessionId = null;
+    let sessions = [];
+    let isGeneratingBase = false;
+    let isGeneratingKvops = false;
+    let activeModel = "HuggingFaceTB/SmolLM2-135M-Instruct";
+    let lastBaseRunPrompt = "";
+    let lastBaseRunText = "";
+    let lastKvopsRunPrompt = "";
+    let lastKvopsRunText = "";
+    let lastKvopsStats = null;
+
+    // Chart.js Instances
+    let kvChart = null;
+    let gpuChart = null;
+
+    // DOM Elements
+    const leftSidebar = document.getElementById('leftSidebar');
+    const rightSidebar = document.getElementById('rightSidebar');
+    const kvopsContainer = document.getElementById('kvopsChatContainer');
+    const baseContainer = document.getElementById('baseChatContainer');
+    const promptChips = document.getElementById('promptChipsContainer');
+
+    // =========================================================
+    // Initialization
+    // =========================================================
+    window.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      initCharts();
+      loadSessionsFromStorage();
+      fetchHardwareInfo();
+    });
+
+    // Auto-grow textarea
+    function autoGrow(element) {
+      element.style.height = 'auto';
+      element.style.height = (element.scrollHeight) + 'px';
+    }
+
+    // Toggle Sidebars
+    function toggleLeftSidebar() {
+      leftSidebar.classList.toggle('-ml-72');
+    }
+
+    function toggleRightSidebar() {
+      rightSidebar.classList.toggle('-mr-80');
+    }
+
+    function toggleTuningDrawer() {
+      const drawer = document.getElementById('tuningDrawer');
+      const arrow = document.getElementById('tuningArrow');
+      drawer.classList.toggle('hidden');
+      arrow.classList.toggle('rotate-180');
+    }
+
+    // Suggested prompt selection
+    function selectPrompt(text) {
+      const bInput = document.getElementById('baseInput');
+      const kInput = document.getElementById('kvopsInput');
+      if (bInput) { bInput.value = text; autoGrow(bInput); }
+      if (kInput) { kInput.value = text; autoGrow(kInput); }
+      if (bInput) bInput.focus();
+    }
+
+    function copyPromptToKvops() {
+      const text = (document.getElementById('baseInput').value.trim()) || lastBaseRunPrompt;
+      if (text) {
+        const kInput = document.getElementById('kvopsInput');
+        kInput.value = text;
+        autoGrow(kInput);
+        kInput.focus();
+      }
+    }
+
+    function copyPromptToBase() {
+      const text = (document.getElementById('kvopsInput').value.trim()) || lastKvopsRunPrompt;
+      if (text) {
+        const bInput = document.getElementById('baseInput');
+        bInput.value = text;
+        autoGrow(bInput);
+        bInput.focus();
+      }
+    }
+
+    function handleBaseKeydown(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        submitBasePrompt();
+      }
+    }
+
+    function handleKvopsKeydown(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        submitKvopsPrompt();
+      }
+    }
+
+    // =========================================================
+    // Hardware & Model Info
+    // =========================================================
+    async function fetchHardwareInfo() {
+      try {
+        const res = await fetch('/api/hardware_info');
+        const data = await res.json();
+        if (data.current_model) {
+          activeModel = data.current_model;
+          document.getElementById('sidebarModelName').innerText = activeModel.split('/').pop();
+          document.getElementById('modelActiveBadge').innerText = `${activeModel.split('/').pop()} • Offline GPU`;
+          document.getElementById('modelSelector').value = activeModel;
+        }
+      } catch (e) {
+        console.error('Failed to fetch hardware info:', e);
+      }
+    }
+
+    async function switchModel(modelId) {
+      try {
+        await fetch('/api/load_model', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({model_name: modelId})
+        });
+        activeModel = modelId;
+        document.getElementById('sidebarModelName').innerText = modelId.split('/').pop();
+        document.getElementById('modelActiveBadge').innerText = `${modelId.split('/').pop()} • Offline GPU`;
+      } catch (e) {
+        console.error('Failed to switch model:', e);
+      }
+    }
+
+    // =========================================================
+    // Real-Time Charts Setup
+    // =========================================================
+    function initCharts() {
+      const kvCtx = document.getElementById('liveKvChart').getContext('2d');
+      kvChart = new Chart(kvCtx, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [
+            {
+              label: 'Standard LLM (MB)',
+              data: [],
+              borderColor: '#ea4335',
+              backgroundColor: 'rgba(234, 67, 53, 0.1)',
+              borderWidth: 2,
+              tension: 0.1,
+              pointRadius: 0
+            },
+            {
+              label: 'LLM-KVOps (MB)',
+              data: [],
+              borderColor: '#34a853',
+              backgroundColor: 'rgba(52, 168, 83, 0.1)',
+              borderWidth: 2,
+              tension: 0.1,
+              pointRadius: 0
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          scales: {
+            x: {
+              title: { display: true, text: 'Token Step', color: '#9aa0a6', font: { size: 10 } },
+              grid: { color: 'rgba(255,255,255,0.05)' },
+              ticks: { color: '#9aa0a6', font: { family: 'JetBrains Mono', size: 9 } }
+            },
+            y: {
+              title: { display: true, text: 'KV MB', color: '#9aa0a6', font: { size: 10 } },
+              grid: { color: 'rgba(255,255,255,0.05)' },
+              ticks: { color: '#9aa0a6', font: { family: 'JetBrains Mono', size: 9 } }
+            }
+          },
+          plugins: {
+            legend: { display: false }
+          }
+        }
+      });
+
+      const gpuCtx = document.getElementById('liveGpuChart').getContext('2d');
+      gpuChart = new Chart(gpuCtx, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [
+            {
+              label: 'Allocated VRAM (MB)',
+              data: [],
+              borderColor: '#fbbc04',
+              backgroundColor: 'rgba(251, 188, 4, 0.1)',
+              borderWidth: 2,
+              tension: 0.1,
+              pointRadius: 0
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          scales: {
+            x: {
+              grid: { color: 'rgba(255,255,255,0.05)' },
+              ticks: { color: '#9aa0a6', font: { family: 'JetBrains Mono', size: 9 } }
+            },
+            y: {
+              title: { display: true, text: 'VRAM MB', color: '#9aa0a6', font: { size: 10 } },
+              grid: { color: 'rgba(255,255,255,0.05)' },
+              ticks: { color: '#9aa0a6', font: { family: 'JetBrains Mono', size: 9 } }
+            }
+          },
+          plugins: {
+            legend: { display: false }
+          }
+        }
+      });
+    }
+
+    function resetCharts() {
+      if (kvChart) {
+        kvChart.data.labels = [];
+        kvChart.data.datasets[0].data = [];
+        kvChart.data.datasets[1].data = [];
+        kvChart.update('none');
+      }
+      if (gpuChart) {
+        gpuChart.data.labels = [];
+        gpuChart.data.datasets[0].data = [];
+        gpuChart.update('none');
+      }
+      document.getElementById('rightSavedPct').innerText = '0.0%';
+      document.getElementById('rightEvictedCount').innerText = '0';
+      document.getElementById('rightLatency').innerText = '0.0 ms';
+      document.getElementById('rightGpuMem').innerText = '0 MB';
+
+      document.getElementById('baseBoxKv').innerText = '0.00 MB';
+      document.getElementById('baseBoxTokens').innerText = '0 tok';
+      document.getElementById('baseBoxLatency').innerText = '0.0 ms';
+      document.getElementById('baseBoxGpu').innerText = '0 MB';
+
+      document.getElementById('kvopsBoxKv').innerText = '0.00 MB';
+      document.getElementById('kvopsBoxSaved').innerText = '0.0%';
+      document.getElementById('kvopsBoxEvicted').innerText = '0 tok';
+      document.getElementById('kvopsBoxGpu').innerText = '0 MB';
+    }
+
+    // =========================================================
+    // Independent Model 1: Standard LLM (Without Eviction)
+    // =========================================================
+    function submitBasePrompt() {
+      const input = document.getElementById('baseInput');
+      const prompt = input.value.trim();
+      if (!prompt || isGeneratingBase) return;
+
+      const baseEmpty = document.getElementById('baseEmptyState');
+      if (baseEmpty) baseEmpty.remove();
+
+      appendUserBubble(baseContainer, prompt);
+      const baseBotEl = appendBotBubble(baseContainer, 'base');
+
+      isGeneratingBase = true;
+      document.getElementById('baseSendBtn').disabled = true;
+      input.value = '';
+      input.style.height = 'auto';
+
+      document.getElementById('baseStatusBadge').innerText = 'Generating...';
+      document.getElementById('baseStatusBadge').className = 'text-[10px] px-2 py-0.5 rounded-full bg-red-900 text-red-200 animate-pulse font-mono';
+
+      const temp = document.getElementById('tempSlider').value;
+      const params = new URLSearchParams({
+        prompt: prompt,
+        mode: 'baseline',
+        max_tokens: 1024,
+        temperature: temp,
+        model_name: activeModel
+      });
+
+      const es = new EventSource(`/api/stream_single?${params.toString()}`);
+      let lastText = '';
+
+      es.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.error) {
+          baseBotEl.innerText = `Error: ${data.error}`;
+          es.close();
+          finishBaseGen(prompt, baseBotEl.innerText);
+          return;
+        }
+        if (data.is_complete) {
+          es.close();
+          finishBaseGen(prompt, lastText);
+          return;
+        }
+
+        lastText = cleanText(data.full_text);
+        baseBotEl.innerText = lastText;
+        baseContainer.scrollTop = baseContainer.scrollHeight;
+
+        // Top badges
+        document.getElementById('baseKvBadge').innerText = `${data.kv_cache_mb.toFixed(2)} MB`;
+        document.getElementById('baseTokensBadge').innerText = `${data.total_tokens} tok`;
+
+        // Bottom In-Pane Resource Dashboard Card
+        document.getElementById('baseBoxKv').innerText = `${data.kv_cache_mb.toFixed(2)} MB`;
+        document.getElementById('baseBoxTokens').innerText = `${data.total_tokens} tok`;
+        document.getElementById('baseBoxLatency').innerText = `${data.step_time_ms.toFixed(1)} ms`;
+        document.getElementById('baseBoxGpu').innerText = `${data.gpu_allocated_mb.toFixed(0)} MB`;
+
+        // Update Standard line on KV Chart
+        const step = data.step;
+        if (!kvChart.data.labels.includes(step)) {
+          kvChart.data.labels.push(step);
+        }
+        kvChart.data.datasets[0].data[step - 1] = data.kv_cache_mb;
+        kvChart.update('none');
+      };
+
+      es.onerror = () => {
+        es.close();
+        finishBaseGen(prompt, lastText);
+      };
+    }
+
+    function finishBaseGen(prompt, text) {
+      isGeneratingBase = false;
+      document.getElementById('baseSendBtn').disabled = false;
+      document.getElementById('baseStatusBadge').innerText = 'Completed';
+      document.getElementById('baseStatusBadge').className = 'text-[10px] px-2 py-0.5 rounded-full bg-red-950 border border-red-800/80 text-red-300 font-mono';
+      document.querySelectorAll('#baseChatContainer .typing-cursor').forEach(el => el.classList.remove('typing-cursor'));
+      lastBaseRunText = text;
+      lastBaseRunPrompt = prompt;
+
+      saveCurrentSession(prompt, lastKvopsRunText || '', text, null);
+    }
+
+    // =========================================================
+    // Independent Model 2: LLM-KVOps (With Eviction)
+    // =========================================================
+    function submitKvopsPrompt() {
+      const input = document.getElementById('kvopsInput');
+      const prompt = input.value.trim();
+      if (!prompt || isGeneratingKvops) return;
+
+      const kvEmpty = document.getElementById('kvopsEmptyState');
+      if (kvEmpty) kvEmpty.remove();
+
+      appendUserBubble(kvopsContainer, prompt);
+      const kvopsBotEl = appendBotBubble(kvopsContainer, 'kvops');
+
+      isGeneratingKvops = true;
+      document.getElementById('kvopsSendBtn').disabled = true;
+      input.value = '';
+      input.style.height = 'auto';
+
+      document.getElementById('kvopsStatusBadge').innerText = 'Evicting...';
+      document.getElementById('kvopsStatusBadge').className = 'text-[10px] px-2 py-0.5 rounded-full bg-emerald-900 text-emerald-200 animate-pulse font-mono';
+
+      const budget = document.getElementById('budgetSlider').value;
+      const temp = document.getElementById('tempSlider').value;
+      const params = new URLSearchParams({
+        prompt: prompt,
+        mode: 'kvops',
+        max_tokens: 1024,
+        budget_slots: budget,
+        temperature: temp,
+        model_name: activeModel
+      });
+
+      const es = new EventSource(`/api/stream_single?${params.toString()}`);
+      let lastText = '';
+      let lastStats = null;
+
+      es.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.error) {
+          kvopsBotEl.innerText = `Error: ${data.error}`;
+          es.close();
+          finishKvopsGen(prompt, kvopsBotEl.innerText, null);
+          return;
+        }
+        if (data.is_complete) {
+          es.close();
+          finishKvopsGen(prompt, lastText, lastStats);
+          return;
+        }
+
+        lastStats = data;
+        lastText = cleanText(data.full_text);
+        kvopsBotEl.innerText = lastText;
+        kvopsContainer.scrollTop = kvopsContainer.scrollHeight;
+
+        // Top badges
+        document.getElementById('kvopsKvBadge').innerText = `${data.kv_cache_mb.toFixed(2)} MB`;
+        document.getElementById('kvopsSavedBadge').innerText = `-${data.saved_pct}% Saved`;
+
+        // Bottom In-Pane Resource Dashboard Card
+        document.getElementById('kvopsBoxKv').innerText = `${data.kv_cache_mb.toFixed(2)} MB`;
+        document.getElementById('kvopsBoxSaved').innerText = `${data.saved_pct.toFixed(1)}%`;
+        document.getElementById('kvopsBoxEvicted').innerText = `${data.tokens_evicted} tok`;
+        document.getElementById('kvopsBoxGpu').innerText = `${data.gpu_allocated_mb.toFixed(0)} MB`;
+
+        // Right sidebar telemetry
+        document.getElementById('rightSavedPct').innerText = `${data.saved_pct.toFixed(1)}%`;
+        document.getElementById('rightEvictedCount').innerText = `${data.tokens_evicted}`;
+        document.getElementById('rightLatency').innerText = `${data.step_time_ms.toFixed(1)} ms`;
+        document.getElementById('rightGpuMem').innerText = `${data.gpu_allocated_mb.toFixed(0)} MB`;
+
+        // Update KVOps line on Charts
+        const step = data.step;
+        if (!kvChart.data.labels.includes(step)) {
+          kvChart.data.labels.push(step);
+          gpuChart.data.labels.push(step);
+        }
+        kvChart.data.datasets[1].data[step - 1] = data.kv_cache_mb;
+        gpuChart.data.datasets[0].data[step - 1] = data.gpu_allocated_mb;
+        kvChart.update('none');
+        gpuChart.update('none');
+      };
+
+      es.onerror = () => {
+        es.close();
+        finishKvopsGen(prompt, lastText, lastStats);
+      };
+    }
+
+    function finishKvopsGen(prompt, text, stats) {
+      isGeneratingKvops = false;
+      document.getElementById('kvopsSendBtn').disabled = false;
+      document.getElementById('kvopsStatusBadge').innerText = 'Completed';
+      document.getElementById('kvopsStatusBadge').className = 'text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 border border-emerald-800/80 text-emerald-300 font-mono';
+      document.querySelectorAll('#kvopsChatContainer .typing-cursor').forEach(el => el.classList.remove('typing-cursor'));
+      lastKvopsRunText = text;
+      lastKvopsRunPrompt = prompt;
+      lastKvopsStats = stats;
+
+      saveCurrentSession(prompt, text, lastBaseRunText || '', stats);
+    }
+
+    function cleanText(text) {
+      if (!text) return '';
+      return text.replace(/<\|im_end\|>/g, '').replace(/<\|endoftext\|>/g, '').trim();
+    }
+
+    // =========================================================
+    // Chat Bubble Helpers
+    // =========================================================
+    function appendUserBubble(container, text) {
+      const row = document.createElement('div');
+      row.className = 'flex justify-end select-text';
+      row.innerHTML = `
+        <div class="user-msg bg-[#282a2c] text-gray-200 text-xs px-4 py-2.5 rounded-2xl max-w-[85%] leading-relaxed select-text cursor-text">
+          ${escapeHtml(text)}
+        </div>
+      `;
+      container.appendChild(row);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function appendBotBubble(container, mode) {
+      const row = document.createElement('div');
+      row.className = 'flex items-start gap-2.5 select-text';
+      const isKvops = mode === 'kvops';
+      const iconColor = isKvops ? 'text-emerald-400' : 'text-red-400';
+      const iconName = isKvops ? 'cpu' : 'bot';
+
+      row.innerHTML = `
+        <div class="w-6 h-6 rounded-full bg-[#1e1f20] border border-[#282a2c] flex items-center justify-center shrink-0 mt-0.5 select-none">
+          <i data-lucide="${iconName}" class="w-3.5 h-3.5 ${iconColor}"></i>
+        </div>
+        <div class="flex-1 bg-[#1e1f20]/60 border border-[#282a2c]/60 rounded-2xl p-3 text-xs text-gray-200 leading-relaxed font-sans msg-content select-text cursor-text">
+          <div class="msg-text typing-cursor whitespace-pre-wrap select-text cursor-text"></div>
+          <div class="mt-2.5 pt-2 border-t border-[#282a2c]/50 flex items-center justify-end select-none">
+            <button onclick="copyBubbleText(this)" class="px-2.5 py-1 rounded-md bg-[#282a2c]/50 hover:bg-[#282a2c] text-[#9aa0a6] hover:text-white text-[11px] flex items-center gap-1.5 transition active:scale-95" title="Copy text">
+              <i data-lucide="copy" class="w-3 h-3"></i>
+              <span>Copy</span>
+            </button>
+          </div>
+        </div>
+      `;
+      container.appendChild(row);
+      lucide.createIcons();
+      container.scrollTop = container.scrollHeight;
+      return row.querySelector('.msg-text');
+    }
+
+    function copyBubbleText(btn) {
+      const bubble = btn.closest('.msg-content');
+      const textEl = bubble ? bubble.querySelector('.msg-text') : null;
+      if (!textEl) return;
+      const text = textEl.innerText.trim();
+      navigator.clipboard.writeText(text).then(() => {
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = `<i data-lucide="check" class="w-3 h-3 text-emerald-400"></i><span class="text-emerald-400">Copied!</span>`;
+        lucide.createIcons();
+        setTimeout(() => {
+          btn.innerHTML = originalHtml;
+          lucide.createIcons();
+        }, 2000);
+      }).catch(err => {
+        console.error("Clipboard copy failed: ", err);
+      });
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.innerText = text;
+      return div.innerHTML;
+    }
+
+    // =========================================================
+    // Session Persistence (localStorage + Backend Sync)
+    // =========================================================
+    function saveCurrentSession(prompt, kvopsText, baseText, stats) {
+      const session = {
+        id: currentSessionId || 'sess_' + Date.now(),
+        title: prompt.slice(0, 32) + (prompt.length > 32 ? '...' : ''),
+        prompt: prompt,
+        kvops_response: kvopsText,
+        base_response: baseText,
+        stats: stats,
+        timestamp: new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})
+      };
+
+      currentSessionId = session.id;
+
+      const existingIdx = sessions.findIndex(s => s.id === session.id);
+      if (existingIdx >= 0) {
+        sessions[existingIdx] = session;
+      } else {
+        sessions.unshift(session);
+      }
+
+      try {
+        localStorage.setItem('llm_kvops_sessions', JSON.stringify(sessions));
+      } catch (e) {
+        console.warn('localStorage full or unavailable');
+      }
+
+      fetch('/api/sessions', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(session)
+      }).catch(() => {});
+
+      renderSessionList();
+    }
+
+    function loadSessionsFromStorage() {
+      try {
+        const stored = localStorage.getItem('llm_kvops_sessions');
+        if (stored) {
+          sessions = JSON.parse(stored);
+          renderSessionList();
+        }
+      } catch (e) {}
+
+      fetch('/api/sessions')
+        .then(res => res.json())
+        .then(data => {
+          if (Array.isArray(data) && data.length > 0) {
+            sessions = data;
+            renderSessionList();
+          }
+        })
+        .catch(() => {});
+    }
+
+    function renderSessionList() {
+      const listEl = document.getElementById('sessionHistoryList');
+      listEl.innerHTML = '';
+
+      if (sessions.length === 0) {
+        listEl.innerHTML = `
+          <div class="px-2 py-3 text-center text-xs text-[#9aa0a6]/60">
+            No saved sessions yet
+          </div>
+        `;
+        return;
+      }
+
+      sessions.forEach(sess => {
+        const item = document.createElement('div');
+        const isActive = sess.id === currentSessionId;
+        item.className = `group flex items-center justify-between px-2.5 py-2 rounded-xl text-xs cursor-pointer transition ${
+          isActive ? 'bg-[#282a2c] text-white font-medium' : 'text-[#c4c7c5] hover:bg-[#282a2c]/60'
+        }`;
+
+        item.innerHTML = `
+          <div class="flex items-center gap-2 truncate flex-1" onclick="loadSession('${sess.id}')">
+            <i data-lucide="message-square" class="w-3.5 h-3.5 text-[#9aa0a6] shrink-0"></i>
+            <span class="truncate">${escapeHtml(sess.title)}</span>
+          </div>
+          <button onclick="deleteSession(event, '${sess.id}')" class="opacity-0 group-hover:opacity-100 p-1 text-[#9aa0a6] hover:text-red-400 transition" title="Delete session">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+          </button>
+        `;
+        listEl.appendChild(item);
+      });
+      lucide.createIcons();
+    }
+
+    function loadSession(sessionId) {
+      const sess = sessions.find(s => s.id === sessionId);
+      if (!sess) return;
+
+      currentSessionId = sess.id;
+      renderSessionList();
+
+      kvopsContainer.innerHTML = '';
+      baseContainer.innerHTML = '';
+      promptChips.classList.add('hidden');
+
+      appendUserBubble(kvopsContainer, sess.prompt);
+      appendUserBubble(baseContainer, sess.prompt);
+
+      const kEl = appendBotBubble(kvopsContainer, 'kvops');
+      kEl.classList.remove('typing-cursor');
+      kEl.innerText = cleanText(sess.kvops_response);
+
+      const bEl = appendBotBubble(baseContainer, 'base');
+      bEl.classList.remove('typing-cursor');
+      bEl.innerText = cleanText(sess.base_response);
+
+      if (sess.stats) {
+        if (sess.stats.kvops) {
+          document.getElementById('kvopsKvBadge').innerText = `${sess.stats.kvops.kv_cache_mb.toFixed(2)} MB`;
+          document.getElementById('kvopsSavedBadge').innerText = `-${sess.stats.kvops.saved_pct}% Saved`;
+          document.getElementById('rightSavedPct').innerText = `${sess.stats.kvops.saved_pct.toFixed(1)}%`;
+          document.getElementById('rightEvictedCount').innerText = `${sess.stats.kvops.tokens_evicted}`;
+          if (document.getElementById('kvopsBoxKv')) document.getElementById('kvopsBoxKv').innerText = `${sess.stats.kvops.kv_cache_mb.toFixed(2)} MB`;
+          if (document.getElementById('kvopsBoxSaved')) document.getElementById('kvopsBoxSaved').innerText = `${sess.stats.kvops.saved_pct.toFixed(1)}%`;
+          if (document.getElementById('kvopsBoxEvicted')) document.getElementById('kvopsBoxEvicted').innerText = `${sess.stats.kvops.tokens_evicted} tok`;
+        }
+        if (sess.stats.baseline) {
+          document.getElementById('baseKvBadge').innerText = `${sess.stats.baseline.kv_cache_mb.toFixed(2)} MB`;
+          document.getElementById('baseTokensBadge').innerText = `${sess.stats.baseline.total_tokens} tok`;
+          if (document.getElementById('baseBoxKv')) document.getElementById('baseBoxKv').innerText = `${sess.stats.baseline.kv_cache_mb.toFixed(2)} MB`;
+          if (document.getElementById('baseBoxTokens')) document.getElementById('baseBoxTokens').innerText = `${sess.stats.baseline.total_tokens} tok`;
+        }
+      }
+    }
+
+    function deleteSession(e, sessionId) {
+      e.stopPropagation();
+      sessions = sessions.filter(s => s.id !== sessionId);
+      try {
+        localStorage.setItem('llm_kvops_sessions', JSON.stringify(sessions));
+      } catch (e) {}
+
+      fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' }).catch(() => {});
+
+      if (currentSessionId === sessionId) {
+        createNewSession();
+      } else {
+        renderSessionList();
+      }
+    }
+
+    function createNewSession() {
+      currentSessionId = null;
+      kvopsContainer.innerHTML = `
+        <div id="kvopsEmptyState" class="h-full flex flex-col items-center justify-center text-center p-6 text-[#9aa0a6]">
+          <div class="w-10 h-10 rounded-full bg-[#1e1f20] border border-[#282a2c] flex items-center justify-center mb-3 text-emerald-400">
+            <i data-lucide="cpu" class="w-5 h-5"></i>
+          </div>
+          <h3 class="text-sm font-medium text-gray-200 mb-1">Bounded KV-Cache Memory</h3>
+          <p class="text-xs max-w-xs leading-relaxed text-[#9aa0a6]">
+            Runs 0-1 Knapsack DP + Attention Sinks eviction to keep KV VRAM constant O(B).
+          </p>
+        </div>
+      `;
+      baseContainer.innerHTML = `
+        <div id="baseEmptyState" class="h-full flex flex-col items-center justify-center text-center p-6 text-[#9aa0a6]">
+          <div class="w-10 h-10 rounded-full bg-[#1e1f20] border border-[#282a2c] flex items-center justify-center mb-3 text-red-400">
+            <i data-lucide="bot" class="w-5 h-5"></i>
+          </div>
+          <h3 class="text-sm font-medium text-gray-200 mb-1">Standard Unconstrained Cache</h3>
+          <p class="text-xs max-w-xs leading-relaxed text-[#9aa0a6]">
+            Standard autoregressive generation where the KV cache grows unbounded O(N).
+          </p>
+        </div>
+      `;
+      promptChips.classList.remove('hidden');
+      document.getElementById('kvopsKvBadge').innerText = '0.00 MB';
+      document.getElementById('kvopsSavedBadge').innerText = '0% Saved';
+      document.getElementById('baseKvBadge').innerText = '0.00 MB';
+      document.getElementById('baseTokensBadge').innerText = '0 tok';
+      if (document.getElementById('kvopsBoxKv')) document.getElementById('kvopsBoxKv').innerText = '0.00 MB';
+      if (document.getElementById('kvopsBoxSaved')) document.getElementById('kvopsBoxSaved').innerText = '0.0%';
+      if (document.getElementById('kvopsBoxEvicted')) document.getElementById('kvopsBoxEvicted').innerText = '0 tok';
+      if (document.getElementById('kvopsBoxGpu')) document.getElementById('kvopsBoxGpu').innerText = '0 MB';
+      if (document.getElementById('baseBoxKv')) document.getElementById('baseBoxKv').innerText = '0.00 MB';
+      if (document.getElementById('baseBoxTokens')) document.getElementById('baseBoxTokens').innerText = '0 tok';
+      if (document.getElementById('baseBoxLatency')) document.getElementById('baseBoxLatency').innerText = '0.0 ms';
+      if (document.getElementById('baseBoxGpu')) document.getElementById('baseBoxGpu').innerText = '0 MB';
+      resetCharts();
+      renderSessionList();
+      lucide.createIcons();
+    }
+  </script>
+</body>
+</html>

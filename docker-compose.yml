@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  cloud-kvops-server:
+    build: .
+    container_name: cloud_kvops_server
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - HOST=0.0.0.0
+    volumes:
+      - .:/app
+    command: ["python", "server.py"]
+
+  cloud-kvops-dashboard:
+    build: .
+    container_name: cloud_kvops_streamlit
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    environment:
+      - PORT=8501
+    volumes:
+      - .:/app
+    command: ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
