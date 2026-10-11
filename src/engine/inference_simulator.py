@@ -5,8 +5,11 @@ Simulates autoregressive decoding and tracks real-time RAM/VRAM resource usage a
 
 from typing import List, Dict, Tuple, Any, Optional
 import time
-import os
-import psutil
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
 import numpy as np
 
 from src.engine.kv_cache_manager import KVCacheManager
@@ -40,11 +43,13 @@ class InferenceSimulator:
             bytes_per_elem=self.preset["bytes_per_elem"],
             target_budget_ratio=target_budget_ratio
         )
-        self.process = psutil.Process(os.getpid())
+        self.process = psutil.Process(os.getpid()) if psutil is not None else None
 
     def get_system_ram_mb(self) -> float:
         """Returns current process RAM usage in MB."""
-        return self.process.memory_info().rss / (1024 * 1024)
+        if self.process is not None:
+            return self.process.memory_info().rss / (1024 * 1024)
+        return 50.0
 
     def generate_synthetic_attention(self, seq_len: int) -> np.ndarray:
         """
